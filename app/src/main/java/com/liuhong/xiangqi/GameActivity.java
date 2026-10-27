@@ -20,10 +20,9 @@ import java.util.concurrent.Executors;
 
 /**
  * 单机中国象棋。
- * 流程：主菜单（强度/战绩/语音/AI 先手/开始游戏）→ 棋盘对局（精简界面，无悔棋）
+ * 流程：主菜单（强度/战绩/语音/AI 先手/开始游戏）→ 棋盘对局（精简界面）
  * → 结算界面（胜负和 + 刘洪江台词 + 再来一局/返回主菜单）。
- * AI「刘洪江」强度自动调整（每档差距明显）；中途退出自动判负；
- * 支持中文语音播报（无语音引擎时菜单显示"语音：不可用"）。
+ * AI「刘洪江」强度自动调整；中途退出自动判负；支持中文语音播报。
  */
 public class GameActivity extends Activity implements BoardView.OnMoveListener {
 
@@ -195,6 +194,11 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
         boardView = findViewById(R.id.board);
         statusView = findViewById(R.id.status);
         btnNew = findViewById(R.id.btn_new);
+        if (boardView == null || statusView == null || btnNew == null) {
+            // 个别电视系统会复用旧的资源缓存，导致按 id 找不到布局里的控件；
+            // 此时退化为纯代码构建对局界面，保证一定能进入游戏。
+            buildGameUiFallback();
+        }
 
         board = new Board();
         boardView.setOnMoveListener(this);
@@ -203,6 +207,33 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
         btnNew.setOnClickListener(v -> newGame());
 
         newGame();
+    }
+
+    /** 资源缓存异常时兜底：用代码搭出对局界面（状态栏 + 棋盘 + 新游戏按钮）。 */
+    private void buildGameUiFallback() {
+        android.widget.LinearLayout root = new android.widget.LinearLayout(this);
+        root.setOrientation(android.widget.LinearLayout.VERTICAL);
+        int pad = (int) (8 * getResources().getDisplayMetrics().density + 0.5f);
+
+        statusView = new TextView(this);
+        statusView.setTextSize(18);
+        statusView.setTextColor(Color.WHITE);
+        statusView.setPadding(pad, pad, pad, pad);
+
+        boardView = new BoardView(this);
+
+        btnNew = new Button(this);
+        btnNew.setText("新游戏");
+
+        root.addView(statusView, new android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT));
+        root.addView(boardView, new android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+        root.addView(btnNew, new android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT));
+        setContentView(root);
     }
 
     private void newGame() {
@@ -445,6 +476,13 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
                 statusView.setText("中途退出，本局判负。按「新对局」重新开始");
             }
         }
+    }
+
+    private void undo() {
+        // 悔棋功能已按需求取消，保留空实现防止旧引用
+    }
+
+    private void popOne() {
     }
 
     private void updateStatus() {
