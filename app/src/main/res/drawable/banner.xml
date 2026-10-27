@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+    <!-- 木纹底 -->
+    <path
+        android:fillColor="#8D5524"
+        android:pathData="M0,0h320v180h-320z" />
+    <!-- 棋盘横线 -->
+    <path
+        android:strokeColor="#5A3616"
+        android:strokeWidth="2"
+        android:pathData="M20,22 L300,22 M20,50 L300,50 M20,78 L300,78 M20,106 L300,106 M20,134 L300,134 M20,162 L300,162" />
+    <!-- 左棋子：奶油底 + 红芯 -->
+    <path
+        android:fillColor="#FDF3D8"
+        android:pathData="M55,55 m-34,0 a34,34 0 1,1 68,0 a34,34 0 1,1 -68,0" />
+    <path
+        android:fillColor="#C62828"
+        android:pathData="M55,55 m-20,0 a20,20 0 1,1 40,0 a20,20 0 1,1 -40,0" />
+    <path
+        android:fillColor="#FDF3D8"
+        android:pathData="M55,55 m-6,0 a6,6 0 1,1 12,0 a6,6 0 1,1 -12,0" />
+    <!-- 右棋子：奶油底 + 墨芯 -->
+    <path
+        android:fillColor="#FDF3D8"
+        android:pathData="M265,55 m-34,0 a34,34 0 1,1 68,0 a34,34 0 1,1 -68,0" />
+    <path
+        android:fillColor="#263238"
+        android:pathData="M265,55 m-20,0 a20,20 0 1,1 40,0 a20,20 0 1,1 -40,0" />
+    <path
+        android:fillColor="#FDF3D8"
+        android:pathData="M265,55 m-6,0 a6,6 0 1,1 12,0 a6,6 0 1,1 -12,0" />
+    <!-- 中间装饰条 -->
+    <path
+        android:fillColor="#FFE0B2"
+        android:pathData="M120,44 h80 v9 h-80 z M120,60 h80 v9 h-80 z" />
+    <!-- 底部标题条 -->
+    <path
+        android:fillColor="#5A3616"
+        android:pathData="M60,118 h200 v34 h-200 z" />
+    <path
+        android:fillColor="#FFE0B2"
+        android:pathData="M70,127 h180 v16 h-180 z" />
+</vector>
