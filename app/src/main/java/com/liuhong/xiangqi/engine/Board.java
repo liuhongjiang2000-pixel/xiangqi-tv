@@ -187,8 +187,13 @@ public class Board {
                     if (q == EMPTY) {
                         if (!cannon) out.add((s << 8) | t);
                     } else {
-                        if (cannon) jumped = true;
-                        else break; // 车被阻挡
+                        if (cannon) {
+                            jumped = true;
+                        } else {
+                            // 车：遇到敌子可吃（然后停止），己子阻挡
+                            if (color(q) != color) out.add((s << 8) | t);
+                            break;
+                        }
                     }
                 } else {
                     if (q != EMPTY) {
@@ -238,9 +243,9 @@ public class Board {
         int from = m >>> 8;
         if (from < 0 || from >= 90) return false;
         int color = color(sq[from]);
-        int king = kingOf(color);
         Board b = copyOf();
         b.make(m);
+        int king = b.kingOf(color); // 走子后再找将位（将本身可能移动）
         if (king == -1) return true;
         return !b.attacked(king, -color);
     }
@@ -270,6 +275,15 @@ public class Board {
         System.arraycopy(sq, 0, b.sq, 0, 90);
         b.side = side;
         return b;
+    }
+
+    /** 局面哈希（含走子方），用于长打/重复局面判定。 */
+    public long hash() {
+        long h = side;
+        for (int i = 0; i < 90; i++) {
+            h = h * 131 + sq[i] + 7;
+        }
+        return h;
     }
 
     /** 对局状态：0 进行中；1 红胜；2 黑胜（含将死与困毙）。 */

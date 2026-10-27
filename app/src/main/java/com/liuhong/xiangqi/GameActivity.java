@@ -41,6 +41,8 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
 
     /** 走子记录：from(8bit) | to(8bit) | captured(8bit 带符号)。 */
     private final Deque<int[]> history = new ArrayDeque<int[]>();
+    /** 局面哈希历史（含初始局面），用于三次重复作和。 */
+    private final java.util.List<Long> posHashes = new java.util.ArrayList<Long>();
 
     private final ExecutorService exec = Executors.newSingleThreadExecutor();
     private ToneGenerator tones;
@@ -85,6 +87,8 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
         humanSide = aiFirst ? -1 : 1;
         gameOver = false;
         history.clear();
+        posHashes.clear();
+        posHashes.add(board.hash());
         boardView.setGame(board, humanSide);
         boardView.setLastMove(-1);
         updateStatus();
@@ -100,7 +104,7 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
     public void onHumanMove(int move) {
         if (gameOver || thinking) return;
         applyMove(move);
-        if (checkEnd()) return;
+        if (gameOver || checkEnd()) return;
         aiMove();
     }
 
@@ -130,12 +134,31 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
         int captured = board.sq[to];
         history.push(new int[]{from, to, captured});
         board.make(move);
+        posHashes.add(board.hash());
         boardView.setLastMove(move);
         beep(captured != Board.EMPTY);
         updateStatus();
+        checkRepetition();
+    }
+
+    /** 同一局面（含走子方）出现三次判和。 */
+    private void checkRepetition() {
+        if (gameOver) return;
+        long h = board.hash();
+        int count = 0;
+        for (long x : posHashes) {
+            if (x == h) count++;
+        }
+        if (count >= 3) {
+            gameOver = true;
+            boardView.setInputEnabled(false);
+            statusView.setText("双方不变作和！按「新对局」再来一局");
+            beep(true);
+        }
     }
 
     private boolean checkEnd() {
+        if (gameOver) return true; // 已和棋（重复局面）等终局状态
         int status = board.status();
         if (status == Board.ONGOING) {
             boardView.setInputEnabled(board.side == humanSide);
@@ -176,6 +199,7 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
         board.sq[rec[0]] = board.sq[rec[1]];
         board.sq[rec[1]] = rec[2];
         board.side = -board.side;
+        if (!posHashes.isEmpty()) posHashes.remove(posHashes.size() - 1);
     }
 
     private void updateStatus() {
