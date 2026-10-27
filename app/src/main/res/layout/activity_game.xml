@@ -55,7 +55,7 @@
             android:layout_height="52dp"
             android:layout_marginHorizontal="6dp"
             android:nextFocusUp="@id/board"
-            android:text="AI 执红先行"
+            android:text="刘洪江执红先行"
             android:textSize="16sp" />
     </LinearLayout>
 
