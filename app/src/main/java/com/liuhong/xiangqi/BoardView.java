@@ -5,6 +5,8 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.AttributeSet;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -45,6 +47,9 @@ public class BoardView extends View {
     private final Paint redTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint blackTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint selPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint selGlowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint selRingPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint capPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint cursorPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint dotPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint lastPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -52,12 +57,25 @@ public class BoardView extends View {
 
     private float ox, oy, cell; // 棋盘左上角偏移与格距
 
+    /** 选中指示的呼吸闪烁相位。 */
+    private boolean pulseOn = true;
+    private final Handler pulseHandler = new Handler(Looper.getMainLooper());
+    private final Runnable pulseTick = new Runnable() {
+        @Override
+        public void run() {
+            if (selected < 0) return;
+            pulseOn = !pulseOn;
+            invalidate();
+            pulseHandler.postDelayed(this, 450);
+        }
+    };
+
     public BoardView(Context context) {
         this(context, null);
     }
 
     public BoardView(Context context, AttributeSet attrs) {
-        super(context, attrs);
+        super(context);
         setFocusable(true);
         setFocusableInTouchMode(true);
         bgPaint.setColor(0xFFE8C48A);
@@ -72,12 +90,21 @@ public class BoardView extends View {
         redTextPaint.setTextAlign(Paint.Align.CENTER);
         blackTextPaint.setColor(0xFF263238);
         blackTextPaint.setTextAlign(Paint.Align.CENTER);
-        selPaint.setColor(0x6639A0FF);
+        selPaint.setColor(0x5539A0FF);
         selPaint.setStyle(Paint.Style.FILL);
+        selGlowPaint.setColor(0x5500E676);
+        selGlowPaint.setStyle(Paint.Style.STROKE);
+        selGlowPaint.setStrokeWidth(14f);
+        selRingPaint.setColor(0xFF00E676);
+        selRingPaint.setStyle(Paint.Style.STROKE);
+        selRingPaint.setStrokeWidth(8f);
+        capPaint.setColor(0xFFE53935);
+        capPaint.setStyle(Paint.Style.STROKE);
+        capPaint.setStrokeWidth(7f);
         cursorPaint.setColor(0xFFFFB300);
         cursorPaint.setStyle(Paint.Style.STROKE);
-        cursorPaint.setStrokeWidth(4f);
-        dotPaint.setColor(0x7738A169);
+        cursorPaint.setStrokeWidth(7f);
+        dotPaint.setColor(0xDD1E88E5);
         lastPaint.setColor(0x44FFFFFF);
         riverPaint.setColor(0xFF6D4C2F);
         riverPaint.setTextAlign(Paint.Align.CENTER);
@@ -90,6 +117,7 @@ public class BoardView extends View {
         this.targets.clear();
         this.lastMove = -1;
         this.cursor = humanSide > 0 ? Board.idx(9, 4) : Board.idx(0, 4);
+        stopPulse();
         invalidate();
     }
 
@@ -98,6 +126,7 @@ public class BoardView extends View {
         if (!enabled) {
             selected = -1;
             targets.clear();
+            stopPulse();
         }
         invalidate();
     }
@@ -117,6 +146,12 @@ public class BoardView extends View {
     }
 
     @Override
+    protected void onDetachedFromWindow() {
+        stopPulse();
+        super.onDetachedFromWindow();
+    }
+
+    @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
         cell = Math.min(w / 9.4f, h / 10.4f);
@@ -126,6 +161,11 @@ public class BoardView extends View {
         redTextPaint.setTextSize(textSize);
         blackTextPaint.setTextSize(textSize);
         riverPaint.setTextSize(cell * 0.55f);
+        // 指示线宽随格子缩放，电视上保持醒目
+        selGlowPaint.setStrokeWidth(cell * 0.16f);
+        selRingPaint.setStrokeWidth(cell * 0.09f);
+        capPaint.setStrokeWidth(cell * 0.085f);
+        cursorPaint.setStrokeWidth(cell * 0.075f);
     }
 
     private float px(int col) {
@@ -174,12 +214,19 @@ public class BoardView extends View {
             drawSquare(canvas, f, lastPaint);
             drawSquare(canvas, t, lastPaint);
         }
-        // 选中
-        if (selected >= 0) drawSquare(canvas, selected, selPaint);
-        // 合法落点
+        // 选中（底色 + 棋子外大圆环，覆盖在棋子之上，老人看得清）
+        if (selected >= 0) {
+            drawSquare(canvas, selected, selPaint);
+        }
+        // 合法落点：空位大蓝点，可吃子位红圈
         for (int m : targets) {
             int t = m & 0xff;
-            canvas.drawCircle(px(Board.colOf(t)), py(Board.rowOf(t)), cell * 0.12f, dotPaint);
+            float tx = px(Board.colOf(t)), ty = py(Board.rowOf(t));
+            if (board.sq[t] != Board.EMPTY) {
+                canvas.drawCircle(tx, ty, cell * 0.5f, capPaint);
+            } else {
+                canvas.drawCircle(tx, ty, cell * 0.15f, dotPaint);
+            }
         }
 
         // 棋子
@@ -187,6 +234,15 @@ public class BoardView extends View {
             int p = board.sq[s];
             if (p == Board.EMPTY) continue;
             drawPiece(canvas, s, p);
+        }
+
+        // 选中棋子：亮绿呼吸圆环（外发光 + 主环）
+        if (selected >= 0) {
+            float sx = px(Board.colOf(selected)), sy = py(Board.rowOf(selected));
+            selGlowPaint.setAlpha(pulseOn ? 0x66 : 0x33);
+            selRingPaint.setAlpha(pulseOn ? 0xFF : 0x99);
+            canvas.drawCircle(sx, sy, cell * 0.55f, selGlowPaint);
+            canvas.drawCircle(sx, sy, cell * 0.52f, selRingPaint);
         }
 
         // 光标
@@ -305,11 +361,24 @@ public class BoardView extends View {
     private void select(int s) {
         selected = s;
         targets = board.legalMovesFrom(s);
+        startPulse();
     }
 
     private void clearSelection() {
         selected = -1;
         targets.clear();
+        stopPulse();
+    }
+
+    /** 启动选中呼吸闪烁（无选中时自动停止）。 */
+    private void startPulse() {
+        pulseOn = true;
+        pulseHandler.removeCallbacks(pulseTick);
+        pulseHandler.postDelayed(pulseTick, 450);
+    }
+
+    private void stopPulse() {
+        pulseHandler.removeCallbacks(pulseTick);
     }
 
     private boolean containsTarget(int s) {
