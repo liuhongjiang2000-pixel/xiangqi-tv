@@ -21,7 +21,7 @@ import java.util.concurrent.Executors;
  * 单机中国象棋：开场菜单（当前强度 + 战绩统计 + 开始游戏）+ 棋盘对局界面。
  * AI「刘洪江」强度自动调整：玩家每赢一局强度升一档，每输一局降一档；
  * 对局中途退出（切后台/回到桌面）自动判负并计入战绩；
- * AI 获胜后会随机弹出一句嘲讽。
+ * AI 获胜后随机嘲讽，落败后随机嘴硬。
  */
 public class GameActivity extends Activity implements BoardView.OnMoveListener {
 
@@ -35,6 +35,15 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
             "服不服？不服再来！",
             "这一步我三手之前就算到了。",
             "年轻人，棋要一步一步下。",
+    };
+    private static final String[] GRUMBLES = {
+            "这盘让你，下盘我认真。",
+            "刚才我漏算了……不算，重来！",
+            "你是蒙的吧？肯定是蒙的。",
+            "哼，赢了我你也别得意。",
+            "让了你车马炮，你懂的。",
+            "这局状态不好，喝口水再战。",
+            "年纪轻轻，下手这么狠……",
     };
     private static final int[] DEPTHS = {1, 1, 2, 2, 3, 3, 4};
     private static final int[] RAND_MARGINS = {200, 120, 120, 60, 60, 0, 0};
@@ -251,7 +260,9 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
         boardView.setInputEnabled(false);
         String tail;
         if (result > 0) {
-            tail = AI_NAME + " 升至「" + STRENGTH_NAMES[strength] + "」";
+            // 玩家获胜：刘洪江嘴硬一句
+            tail = AI_NAME + " 升至「" + STRENGTH_NAMES[strength] + "」嘴上不服："
+                    + GRUMBLES[random.nextInt(GRUMBLES.length)];
         } else if (result < 0) {
             // AI 获胜：报名号并随机嘲讽一句
             tail = AI_NAME + "「" + STRENGTH_NAMES[strength] + "」："
