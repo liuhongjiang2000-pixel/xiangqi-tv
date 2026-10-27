@@ -19,12 +19,23 @@ import java.util.concurrent.Executors;
 
 /**
  * 单机中国象棋：开场菜单（当前强度 + 战绩统计 + 开始游戏）+ 棋盘对局界面。
- * AI 强度自动调整：玩家每赢一局强度升一档，每输一局降一档；
- * 对局中途退出（切后台/回到桌面）自动判负并计入战绩。
+ * AI「刘洪江」强度自动调整：玩家每赢一局强度升一档，每输一局降一档；
+ * 对局中途退出（切后台/回到桌面）自动判负并计入战绩；
+ * AI 获胜后会随机弹出一句嘲讽。
  */
 public class GameActivity extends Activity implements BoardView.OnMoveListener {
 
     private static final String[] STRENGTH_NAMES = {"菜鸟", "新手", "初级", "中级", "高级", "大师", "特级大师"};
+    private static final String AI_NAME = "刘洪江";
+    private static final String[] TAUNTS = {
+            "就这点本事？回去再练十年吧！",
+            "将军！承让承让～",
+            "这局我又赢了，啧啧。",
+            "棋力还行，可惜你的对手是我。",
+            "服不服？不服再来！",
+            "这一步我三手之前就算到了。",
+            "年轻人，棋要一步一步下。",
+    };
     private static final int[] DEPTHS = {1, 1, 2, 2, 3, 3, 4};
     private static final int[] RAND_MARGINS = {200, 120, 120, 60, 60, 0, 0};
     private static final int MAX_STRENGTH = STRENGTH_NAMES.length - 1;
@@ -54,6 +65,7 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
     private final java.util.List<Long> posHashes = new java.util.ArrayList<Long>();
 
     private final ExecutorService exec = Executors.newSingleThreadExecutor();
+    private final java.util.Random random = new java.util.Random();
     private ToneGenerator tones;
 
     @Override
@@ -97,7 +109,7 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
         String rate = games == 0 ? "—" : (wins * 100 / games) + "%";
         tvStats.setText("战绩：" + games + " 场 · 胜 " + wins + " / 负 " + losses
                 + " / 和 " + draws + " · 胜率 " + rate
-                + "\n（获胜 AI 升档，落败降档）");
+                + "\n（获胜 " + AI_NAME + " 升档，落败降档）");
     }
 
     /** 记录一局结果并自动调整 AI 强度：1 胜 / 0 和 / -1 负。 */
@@ -239,9 +251,11 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
         boardView.setInputEnabled(false);
         String tail;
         if (result > 0) {
-            tail = "AI 升至「" + STRENGTH_NAMES[strength] + "」";
+            tail = AI_NAME + " 升至「" + STRENGTH_NAMES[strength] + "」";
         } else if (result < 0) {
-            tail = "AI 降至「" + STRENGTH_NAMES[strength] + "」";
+            // AI 获胜：报名号并随机嘲讽一句
+            tail = AI_NAME + "「" + STRENGTH_NAMES[strength] + "」："
+                    + TAUNTS[random.nextInt(TAUNTS.length)];
         } else {
             tail = "强度不变";
         }
@@ -296,17 +310,17 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
     private void updateStatus() {
         if (gameOver) return;
         if (thinking) {
-            statusView.setText((board.side > 0 ? "红方" : "黑方") + "（电脑）思考中…");
+            statusView.setText((board.side > 0 ? "红方" : "黑方") + "（" + AI_NAME + "）思考中…");
         } else {
             String who = board.side > 0 ? "红方" : "黑方";
-            String owner = board.side == humanSide ? "（你）" : "（电脑）";
+            String owner = board.side == humanSide ? "（你）" : "（" + AI_NAME + "）";
             String check = board.inCheck() ? " · 将军！" : "";
             statusView.setText("轮到 " + who + owner + " 走棋" + check);
         }
     }
 
     private void updateAiFirstButton() {
-        btnAiFirst.setText(aiFirst ? "AI 执红先行：开" : "AI 执红先行：关");
+        btnAiFirst.setText(aiFirst ? AI_NAME + "执红先行：开" : AI_NAME + "执红先行：关");
     }
 
     private void beep(boolean strong) {
