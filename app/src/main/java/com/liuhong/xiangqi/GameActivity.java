@@ -14,17 +14,16 @@ import android.widget.Toast;
 import com.liuhong.xiangqi.engine.Board;
 import com.liuhong.xiangqi.engine.Search;
 
-import java.util.ArrayDeque;
-import java.util.Deque;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
  * 单机中国象棋。
- * 流程：主菜单（强度/战绩/语音/AI 先手/开始游戏）→ 棋盘对局（精简界面）
+ * 流程：主菜单（强度/战绩/语音/AI 先手/开始游戏）→ 棋盘对局（精简界面，无悔棋）
  * → 结算界面（胜负和 + 刘洪江台词 + 再来一局/返回主菜单）。
- * AI「刘洪江」强度自动调整；中途退出自动判负；支持中文语音播报。
+ * AI「刘洪江」强度自动调整（每档差距明显）；中途退出自动判负；
+ * 支持中文语音播报（无语音引擎时菜单显示"语音：不可用"）。
  */
 public class GameActivity extends Activity implements BoardView.OnMoveListener {
 
@@ -48,8 +47,8 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
             "这局状态不好，喝口水再战。",
             "年纪轻轻，下手这么狠……",
     };
-    private static final int[] DEPTHS = {1, 1, 2, 2, 3, 3, 4};
-    private static final int[] RAND_MARGINS = {200, 120, 120, 60, 60, 0, 0};
+    private static final int[] DEPTHS = {1, 2, 3, 3, 4, 4, 5};
+    private static final int[] RAND_MARGINS = {250, 160, 120, 60, 30, 0, 0};
     private static final int MAX_STRENGTH = STRENGTH_NAMES.length - 1;
     private static final int DEFAULT_STRENGTH = 2;
     private static final long AI_TIME_MS = 2500;
@@ -58,7 +57,7 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
     private Board board;
     private BoardView boardView;
     private TextView statusView;
-    private Button btnNew, btnUndo;
+    private Button btnNew;
 
     private int humanSide = 1;
     private boolean aiFirst = false;
@@ -76,8 +75,6 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
     private int wins, losses, draws;
     private SharedPreferences prefs;
 
-    /** 走子记录：from(8bit) | to(8bit) | captured(8bit 带符号)。 */
-    private final Deque<int[]> history = new ArrayDeque<int[]>();
     /** 局面哈希历史（含初始局面），用于三次重复作和。 */
     private final java.util.List<Long> posHashes = new java.util.ArrayList<Long>();
 
@@ -103,6 +100,7 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
     private void initTts() {
         try {
             tts = new TextToSpeech(this, status -> {
+                runOnUiThread(GameActivity.this::updateMenuText);
                 if (status != TextToSpeech.SUCCESS) {
                     tts = null;
                     return;
@@ -114,6 +112,7 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
                 } else {
                     tts.setSpeechRate(0.95f);
                 }
+                runOnUiThread(GameActivity.this::updateMenuText);
             });
         } catch (Exception e) {
             tts = null;
@@ -154,6 +153,10 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
             updateMenuText();
         });
         btnVoice.setOnClickListener(v -> {
+            if (tts == null) {
+                toast("电视没有安装语音引擎，无法使用语音");
+                return;
+            }
             voiceOn = !voiceOn;
             saveStats();
             updateMenuText();
@@ -180,7 +183,7 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
             btnAiFirst.setText(aiFirst ? AI_NAME + "执红先行：开" : AI_NAME + "执红先行：关");
         }
         if (btnVoice != null) {
-            btnVoice.setText(voiceOn ? "语音：开" : "语音：关");
+            btnVoice.setText(tts == null ? "语音：不可用" : (voiceOn ? "语音：开" : "语音：关"));
         }
     }
 
@@ -192,14 +195,12 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
         boardView = findViewById(R.id.board);
         statusView = findViewById(R.id.status);
         btnNew = findViewById(R.id.btn_new);
-        btnUndo = findViewById(R.id.btn_undo);
 
         board = new Board();
         boardView.setOnMoveListener(this);
-        boardView.setFocusDownTarget(btnUndo);
+        boardView.setFocusDownTarget(btnNew);
 
         btnNew.setOnClickListener(v -> newGame());
-        btnUndo.setOnClickListener(v -> undo());
 
         newGame();
     }
@@ -209,7 +210,6 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
         humanSide = aiFirst ? -1 : 1;
         gameOver = false;
         gameStarted = true;
-        history.clear();
         posHashes.clear();
         posHashes.add(board.hash());
         boardView.setGame(board, humanSide);
@@ -255,7 +255,6 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
         int from = move >>> 8;
         int to = move & 0xff;
         int captured = board.sq[to];
-        history.push(new int[]{from, to, captured});
         board.make(move);
         posHashes.add(board.hash());
         boardView.setLastMove(move);
@@ -446,34 +445,6 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
                 statusView.setText("中途退出，本局判负。按「新对局」重新开始");
             }
         }
-    }
-
-    private void undo() {
-        // 已终局（含中途退出判负）的棋局不允许悔棋复活
-        if (!gameStarted || thinking || history.isEmpty()) return;
-        popOne();
-        // 人机模式下回退到玩家回合
-        if (board.side != humanSide && !history.isEmpty()) {
-            popOne();
-        }
-        gameOver = false;
-        boardView.setLastMove(-1);
-        boardView.setGame(board, humanSide);
-        updateStatus();
-        if (board.side != humanSide) {
-            aiMove();
-        } else {
-            boardView.setInputEnabled(true);
-            boardView.requestFocus();
-        }
-    }
-
-    private void popOne() {
-        int[] rec = history.pop();
-        board.sq[rec[0]] = board.sq[rec[1]];
-        board.sq[rec[1]] = rec[2];
-        board.side = -board.side;
-        if (!posHashes.isEmpty()) posHashes.remove(posHashes.size() - 1);
     }
 
     private void updateStatus() {
