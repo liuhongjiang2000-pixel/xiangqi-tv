@@ -26,25 +26,13 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center"
-        android:padding="8dp">
-
-        <Button
-            android:id="@+id/btn_undo"
-            android:layout_width="0dp"
-            android:layout_weight="1"
-            android:layout_height="48dp"
-            android:layout_marginHorizontal="6dp"
-            android:nextFocusUp="@id/board"
-            android:nextFocusRight="@id/btn_new"
-            android:text="悔棋"
-            android:textSize="16sp" />
+        android:padding="8dp"
+        android:paddingBottom="24dp">
 
         <Button
             android:id="@+id/btn_new"
-            android:layout_width="0dp"
-            android:layout_weight="1"
+            android:layout_width="240dp"
             android:layout_height="48dp"
-            android:layout_marginHorizontal="6dp"
             android:nextFocusUp="@id/board"
             android:text="新对局"
             android:textSize="16sp" />
