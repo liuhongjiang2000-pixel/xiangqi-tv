@@ -18,8 +18,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * 单机中国象棋主界面：棋盘 + 状态栏 + 功能按钮。
- * 人人对局 / 人机对局，多档难度，悔棋、AI 先手。
+ * 单机中国象棋：开场菜单（选难度/开始游戏）+ 棋盘对局界面。
+ * 人人对局 / 人机对局，多档难度，悔棋、AI 先手，吃子音效。
  */
 public class GameActivity extends Activity implements BoardView.OnMoveListener {
 
@@ -32,6 +32,7 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
     private BoardView boardView;
     private TextView statusView;
     private Button btnNew, btnUndo, btnLevel, btnAiFirst;
+    private Button btnMenuLevel;
 
     private int humanSide = 1;
     private boolean aiFirst = false;
@@ -50,6 +51,25 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // 开场菜单：选难度 / 开始游戏
+        setContentView(R.layout.activity_menu);
+
+        tones = new ToneGenerator(AudioManager.STREAM_MUSIC, 70);
+
+        btnMenuLevel = findViewById(R.id.btn_menu_level);
+        Button btnMenuStart = findViewById(R.id.btn_menu_start);
+        btnMenuLevel.setOnClickListener(v -> {
+            level = (level + 1) % LEVEL_NAMES.length;
+            updateLevelButton();
+            toast("难度：" + LEVEL_NAMES[level]);
+        });
+        btnMenuStart.setOnClickListener(v -> startGame());
+        btnMenuStart.requestFocus();
+        updateLevelButton();
+    }
+
+    /** 进入棋盘界面并开始新对局。 */
+    private void startGame() {
         setContentView(R.layout.activity_game);
 
         boardView = findViewById(R.id.board);
@@ -58,8 +78,6 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
         btnUndo = findViewById(R.id.btn_undo);
         btnLevel = findViewById(R.id.btn_level);
         btnAiFirst = findViewById(R.id.btn_aifirst);
-
-        tones = new ToneGenerator(AudioManager.STREAM_MUSIC, 70);
 
         board = new Board();
         boardView.setOnMoveListener(this);
@@ -137,7 +155,8 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
         board.make(move);
         posHashes.add(board.hash());
         boardView.setLastMove(move);
-        beep(captured != Board.EMPTY);
+        if (captured != Board.EMPTY) playCaptureSound();
+        else beep(false);
         updateStatus();
         checkRepetition();
     }
@@ -216,7 +235,9 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
     }
 
     private void updateLevelButton() {
-        btnLevel.setText("难度：" + LEVEL_NAMES[level]);
+        String t = "难度：" + LEVEL_NAMES[level];
+        if (btnLevel != null) btnLevel.setText(t);
+        if (btnMenuLevel != null) btnMenuLevel.setText(t);
     }
 
     private void updateAiFirstButton() {
@@ -228,6 +249,21 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
             tones.startTone(strong
                     ? ToneGenerator.TONE_PROP_ACK
                     : ToneGenerator.TONE_PROP_BEEP, 70);
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** 吃子音效：短促双音，模拟"打击感"。 */
+    private void playCaptureSound() {
+        try {
+            tones.startTone(ToneGenerator.TONE_PROP_ACK, 90);
+            new android.os.Handler(android.os.Looper.getMainLooper())
+                    .postDelayed(() -> {
+                        try {
+                            tones.startTone(ToneGenerator.TONE_PROP_BEEP, 70);
+                        } catch (Exception ignored) {
+                        }
+                    }, 110);
         } catch (Exception ignored) {
         }
     }
