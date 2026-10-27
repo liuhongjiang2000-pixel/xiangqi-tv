@@ -185,10 +185,11 @@ public class Board {
                 int q = sq[t];
                 if (!jumped) {
                     if (q == EMPTY) {
-                        if (!cannon) out.add((s << 8) | t);
+                        // 车与炮的常步：空位都可入（炮不吃子时走法同车）
+                        out.add((s << 8) | t);
                     } else {
                         if (cannon) {
-                            jumped = true;
+                            jumped = true; // 炮：遇到炮架，此后只可吃子
                         } else {
                             // 车：遇到敌子可吃（然后停止），己子阻挡
                             if (color(q) != color) out.add((s << 8) | t);
