@@ -23,6 +23,9 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      - name: Decode signing keystore
+        run: base64 -d app/xiangqi.keystore.b64 > app/xiangqi.keystore
+
       - name: Build debug APK
         run: gradle assembleDebug --stacktrace
 
