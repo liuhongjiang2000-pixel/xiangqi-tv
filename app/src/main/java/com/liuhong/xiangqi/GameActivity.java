@@ -63,6 +63,7 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
 
         board = new Board();
         boardView.setOnMoveListener(this);
+        boardView.setFocusDownTarget(btnNew);
 
         btnNew.setOnClickListener(v -> newGame());
         btnUndo.setOnClickListener(v -> undo());
