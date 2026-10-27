@@ -35,6 +35,8 @@ public class BoardView extends View {
     private int cursor = Board.idx(9, 4);
 
     private OnMoveListener listener;
+    /** 光标在棋盘最底行时按"下"键转移焦点的目标（底部功能按钮栏）。 */
+    private View focusDownTarget;
 
     private final Paint linePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint bgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -107,6 +109,11 @@ public class BoardView extends View {
 
     public void setOnMoveListener(OnMoveListener l) {
         this.listener = l;
+    }
+
+    /** 设置光标在棋盘最底行继续按"下"键时接收焦点的视图（底部按钮栏）。 */
+    public void setFocusDownTarget(View v) {
+        this.focusDownTarget = v;
     }
 
     @Override
@@ -235,7 +242,12 @@ public class BoardView extends View {
                 invalidate();
                 return true;
             case KeyEvent.KEYCODE_DPAD_DOWN:
-                if (r < 9) cursor = Board.idx(r + 1, c);
+                if (r < 9) {
+                    cursor = Board.idx(r + 1, c);
+                } else if (focusDownTarget != null) {
+                    // 光标已在棋盘最底行：把焦点交给底部功能按钮栏
+                    focusDownTarget.requestFocus();
+                }
                 invalidate();
                 return true;
             case KeyEvent.KEYCODE_DPAD_LEFT:
