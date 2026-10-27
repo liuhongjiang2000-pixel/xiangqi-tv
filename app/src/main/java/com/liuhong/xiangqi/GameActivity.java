@@ -1,10 +1,10 @@
 package com.liuhong.xiangqi;
 
 import android.app.Activity;
+import android.content.SharedPreferences;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
 import android.os.Bundle;
-import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -18,27 +18,35 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * 单机中国象棋：开场菜单（选难度/开始游戏）+ 棋盘对局界面。
- * 人人对局 / 人机对局，多档难度，悔棋、AI 先手，吃子音效。
+ * 单机中国象棋：开场菜单（当前强度 + 战绩统计 + 开始游戏）+ 棋盘对局界面。
+ * AI 强度自动调整：玩家每赢一局强度升一档，每输一局降一档；
+ * 对局中途退出（切后台/回到桌面）自动判负并计入战绩。
  */
 public class GameActivity extends Activity implements BoardView.OnMoveListener {
 
-    private static final int[] DEPTHS = {1, 2, 3, 4};
-    private static final int[] RAND_MARGINS = {120, 60, 0, 0};
-    private static final String[] LEVEL_NAMES = {"入门", "初级", "中级", "高级"};
+    private static final String[] STRENGTH_NAMES = {"菜鸟", "新手", "初级", "中级", "高级", "大师", "特级大师"};
+    private static final int[] DEPTHS = {1, 1, 2, 2, 3, 3, 4};
+    private static final int[] RAND_MARGINS = {200, 120, 120, 60, 60, 0, 0};
+    private static final int MAX_STRENGTH = STRENGTH_NAMES.length - 1;
+    private static final int DEFAULT_STRENGTH = 2;
     private static final long AI_TIME_MS = 2500;
+    private static final String PREFS = "xiangqi_stats";
 
     private Board board;
     private BoardView boardView;
     private TextView statusView;
-    private Button btnNew, btnUndo, btnLevel, btnAiFirst;
-    private Button btnMenuLevel;
+    private Button btnNew, btnUndo, btnAiFirst;
 
     private int humanSide = 1;
     private boolean aiFirst = false;
-    private int level = 1; // 0..3
+    private int strength = DEFAULT_STRENGTH;
     private boolean gameOver = false;
+    private boolean gameStarted = false;
     private boolean thinking = false;
+
+    // 战绩统计
+    private int wins, losses, draws;
+    private SharedPreferences prefs;
 
     /** 走子记录：from(8bit) | to(8bit) | captured(8bit 带符号)。 */
     private final Deque<int[]> history = new ArrayDeque<int[]>();
@@ -51,21 +59,59 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // 开场菜单：选难度 / 开始游戏
+        // 开场菜单：当前强度 / 战绩统计 / 开始游戏
         setContentView(R.layout.activity_menu);
 
         tones = new ToneGenerator(AudioManager.STREAM_MUSIC, 70);
+        prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        loadStats();
 
-        btnMenuLevel = findViewById(R.id.btn_menu_level);
         Button btnMenuStart = findViewById(R.id.btn_menu_start);
-        btnMenuLevel.setOnClickListener(v -> {
-            level = (level + 1) % LEVEL_NAMES.length;
-            updateLevelButton();
-            toast("难度：" + LEVEL_NAMES[level]);
-        });
         btnMenuStart.setOnClickListener(v -> startGame());
         btnMenuStart.requestFocus();
-        updateLevelButton();
+        updateMenuText();
+    }
+
+    private void loadStats() {
+        wins = prefs.getInt("wins", 0);
+        losses = prefs.getInt("losses", 0);
+        draws = prefs.getInt("draws", 0);
+        strength = prefs.getInt("strength", DEFAULT_STRENGTH);
+    }
+
+    private void saveStats() {
+        prefs.edit()
+                .putInt("wins", wins)
+                .putInt("losses", losses)
+                .putInt("draws", draws)
+                .putInt("strength", strength)
+                .apply();
+    }
+
+    private void updateMenuText() {
+        TextView tvStrength = findViewById(R.id.tv_strength);
+        TextView tvStats = findViewById(R.id.tv_stats);
+        if (tvStrength == null || tvStats == null) return;
+        tvStrength.setText("当前强度：" + STRENGTH_NAMES[strength]);
+        int games = wins + losses + draws;
+        String rate = games == 0 ? "—" : (wins * 100 / games) + "%";
+        tvStats.setText("战绩：" + games + " 场 · 胜 " + wins + " / 负 " + losses
+                + " / 和 " + draws + " · 胜率 " + rate
+                + "\n（获胜 AI 升档，落败降档）");
+    }
+
+    /** 记录一局结果并自动调整 AI 强度：1 胜 / 0 和 / -1 负。 */
+    private void recordResult(int result) {
+        if (result > 0) {
+            wins++;
+            strength = Math.min(strength + 1, MAX_STRENGTH);
+        } else if (result < 0) {
+            losses++;
+            strength = Math.max(strength - 1, 0);
+        } else {
+            draws++;
+        }
+        saveStats();
     }
 
     /** 进入棋盘界面并开始新对局。 */
@@ -76,7 +122,6 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
         statusView = findViewById(R.id.status);
         btnNew = findViewById(R.id.btn_new);
         btnUndo = findViewById(R.id.btn_undo);
-        btnLevel = findViewById(R.id.btn_level);
         btnAiFirst = findViewById(R.id.btn_aifirst);
 
         board = new Board();
@@ -85,18 +130,12 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
 
         btnNew.setOnClickListener(v -> newGame());
         btnUndo.setOnClickListener(v -> undo());
-        btnLevel.setOnClickListener(v -> {
-            level = (level + 1) % LEVEL_NAMES.length;
-            updateLevelButton();
-            toast("难度：" + LEVEL_NAMES[level]);
-        });
         btnAiFirst.setOnClickListener(v -> {
             aiFirst = !aiFirst;
             updateAiFirstButton();
             newGame();
         });
 
-        updateLevelButton();
         updateAiFirstButton();
         newGame();
     }
@@ -105,6 +144,7 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
         board.reset();
         humanSide = aiFirst ? -1 : 1;
         gameOver = false;
+        gameStarted = true;
         history.clear();
         posHashes.clear();
         posHashes.add(board.hash());
@@ -133,10 +173,10 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
         updateStatus();
         exec.execute(() -> {
             Search search = new Search(AI_TIME_MS);
-            int move = search.findBest(board, DEPTHS[level], RAND_MARGINS[level]);
+            int move = search.findBest(board, DEPTHS[strength], RAND_MARGINS[strength]);
             runOnUiThread(() -> {
                 thinking = false;
-                if (isFinishing()) return;
+                if (isFinishing() || gameOver) return;
                 if (move >= 0) {
                     applyMove(move);
                     checkEnd();
@@ -170,33 +210,64 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
             if (x == h) count++;
         }
         if (count >= 3) {
-            gameOver = true;
-            boardView.setInputEnabled(false);
-            statusView.setText("双方不变作和！按「新对局」再来一局");
-            beep(true);
+            endGame("双方不变作和！", 0);
         }
     }
 
     private boolean checkEnd() {
-        if (gameOver) return true; // 已和棋（重复局面）等终局状态
+        if (gameOver) return true; // 已终局
         int status = board.status();
         if (status == Board.ONGOING) {
             boardView.setInputEnabled(board.side == humanSide);
             if (board.side == humanSide) boardView.requestFocus();
             return false;
         }
-        gameOver = true;
-        boardView.setInputEnabled(false);
         boolean redWin = status == Board.RED_WIN;
         String winner = redWin ? "红方" : "黑方";
         String reason = board.inCheck() ? "将死" : "困毙";
-        statusView.setText(winner + "胜（" + reason + "）！按「新对局」再来一局");
-        beep(true);
+        boolean humanWin = (status == Board.RED_WIN) == (humanSide > 0);
+        endGame(winner + "胜（" + reason + "）！", humanWin ? 1 : -1);
         return true;
     }
 
+    /** 终局统一处理：提示语、战绩、强度、禁输入。 */
+    private void endGame(String message, int result) {
+        if (gameOver) return;
+        gameOver = true;
+        gameStarted = false;
+        recordResult(result);
+        boardView.setInputEnabled(false);
+        String tail;
+        if (result > 0) {
+            tail = "AI 升至「" + STRENGTH_NAMES[strength] + "」";
+        } else if (result < 0) {
+            tail = "AI 降至「" + STRENGTH_NAMES[strength] + "」";
+        } else {
+            tail = "强度不变";
+        }
+        statusView.setText(message + " " + tail + "，按「新对局」再来一局");
+        beep(true);
+    }
+
+    /** 对局中途退出（切后台/回桌面）自动判负。 */
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (gameStarted && !gameOver) {
+            recordResult(-1);
+            gameOver = true;
+            gameStarted = false;
+            thinking = false;
+            if (boardView != null) boardView.setInputEnabled(false);
+            if (statusView != null) {
+                statusView.setText("中途退出，本局判负。按「新对局」重新开始");
+            }
+        }
+    }
+
     private void undo() {
-        if (thinking || history.isEmpty()) return;
+        // 已终局（含中途退出判负）的棋局不允许悔棋复活
+        if (!gameStarted || thinking || history.isEmpty()) return;
         popOne();
         // 人机模式下回退到玩家回合
         if (board.side != humanSide && !history.isEmpty()) {
@@ -232,12 +303,6 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
             String check = board.inCheck() ? " · 将军！" : "";
             statusView.setText("轮到 " + who + owner + " 走棋" + check);
         }
-    }
-
-    private void updateLevelButton() {
-        String t = "难度：" + LEVEL_NAMES[level];
-        if (btnLevel != null) btnLevel.setText(t);
-        if (btnMenuLevel != null) btnMenuLevel.setText(t);
     }
 
     private void updateAiFirstButton() {
