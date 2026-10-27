@@ -2,9 +2,11 @@ package com.liuhong.xiangqi;
 
 import android.app.Activity;
 import android.content.SharedPreferences;
+import android.graphics.Color;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
 import android.os.Bundle;
+import android.speech.tts.TextToSpeech;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -14,14 +16,15 @@ import com.liuhong.xiangqi.engine.Search;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * 单机中国象棋：开场菜单（当前强度 + 战绩统计 + 开始游戏）+ 棋盘对局界面。
- * AI「刘洪江」强度自动调整：玩家每赢一局强度升一档，每输一局降一档；
- * 对局中途退出（切后台/回到桌面）自动判负并计入战绩；
- * AI 获胜后随机嘲讽，落败后随机嘴硬。
+ * 单机中国象棋。
+ * 流程：主菜单（强度/战绩/语音/AI 先手/开始游戏）→ 棋盘对局（精简界面）
+ * → 结算界面（胜负和 + 刘洪江台词 + 再来一局/返回主菜单）。
+ * AI「刘洪江」强度自动调整；中途退出自动判负；支持中文语音播报。
  */
 public class GameActivity extends Activity implements BoardView.OnMoveListener {
 
@@ -55,7 +58,7 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
     private Board board;
     private BoardView boardView;
     private TextView statusView;
-    private Button btnNew, btnUndo, btnAiFirst;
+    private Button btnNew, btnUndo;
 
     private int humanSide = 1;
     private boolean aiFirst = false;
@@ -63,6 +66,11 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
     private boolean gameOver = false;
     private boolean gameStarted = false;
     private boolean thinking = false;
+    private boolean voiceOn = true;
+
+    // 结算界面缓存
+    private int lastResult = 0;
+    private String lastQuote = "";
 
     // 战绩统计
     private int wins, losses, draws;
@@ -76,37 +84,84 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
     private final ExecutorService exec = Executors.newSingleThreadExecutor();
     private final java.util.Random random = new java.util.Random();
     private ToneGenerator tones;
+    private TextToSpeech tts;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // 开场菜单：当前强度 / 战绩统计 / 开始游戏
-        setContentView(R.layout.activity_menu);
-
-        tones = new ToneGenerator(AudioManager.STREAM_MUSIC, 70);
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         loadStats();
 
-        Button btnMenuStart = findViewById(R.id.btn_menu_start);
-        btnMenuStart.setOnClickListener(v -> startGame());
-        btnMenuStart.requestFocus();
+        tones = new ToneGenerator(AudioManager.STREAM_MUSIC, 70);
+        initTts();
+
+        showMenu();
+    }
+
+    // ---------- 语音 ----------
+
+    private void initTts() {
+        try {
+            tts = new TextToSpeech(this, status -> {
+                if (status != TextToSpeech.SUCCESS) {
+                    tts = null;
+                    return;
+                }
+                int r = tts.setLanguage(Locale.CHINESE);
+                if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) {
+                    tts.shutdown();
+                    tts = null;
+                } else {
+                    tts.setSpeechRate(0.95f);
+                }
+            });
+        } catch (Exception e) {
+            tts = null;
+        }
+    }
+
+    /** 语音播报（静默降级：无 TTS 或关闭时不发声）。 */
+    private void speak(String text) {
+        if (!voiceOn || tts == null) return;
+        try {
+            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "xiangqi");
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** 追加播报（不打断前面的语音）。 */
+    private void speakAdd(String text) {
+        if (!voiceOn || tts == null) return;
+        try {
+            tts.speak(text, TextToSpeech.QUEUE_ADD, null, "xiangqi");
+        } catch (Exception ignored) {
+        }
+    }
+
+    // ---------- 主菜单 ----------
+
+    private void showMenu() {
+        setContentView(R.layout.activity_menu);
+
+        Button btnStart = findViewById(R.id.btn_menu_start);
+        Button btnAiFirst = findViewById(R.id.btn_menu_aifirst);
+        Button btnVoice = findViewById(R.id.btn_menu_voice);
+
+        btnStart.setOnClickListener(v -> startGame());
+        btnAiFirst.setOnClickListener(v -> {
+            aiFirst = !aiFirst;
+            saveStats();
+            updateMenuText();
+        });
+        btnVoice.setOnClickListener(v -> {
+            voiceOn = !voiceOn;
+            saveStats();
+            updateMenuText();
+            if (voiceOn) speak("语音已开启");
+        });
+
+        btnStart.requestFocus();
         updateMenuText();
-    }
-
-    private void loadStats() {
-        wins = prefs.getInt("wins", 0);
-        losses = prefs.getInt("losses", 0);
-        draws = prefs.getInt("draws", 0);
-        strength = prefs.getInt("strength", DEFAULT_STRENGTH);
-    }
-
-    private void saveStats() {
-        prefs.edit()
-                .putInt("wins", wins)
-                .putInt("losses", losses)
-                .putInt("draws", draws)
-                .putInt("strength", strength)
-                .apply();
     }
 
     private void updateMenuText() {
@@ -119,23 +174,18 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
         tvStats.setText("战绩：" + games + " 场 · 胜 " + wins + " / 负 " + losses
                 + " / 和 " + draws + " · 胜率 " + rate
                 + "\n（获胜 " + AI_NAME + " 升档，落败降档）");
-    }
-
-    /** 记录一局结果并自动调整 AI 强度：1 胜 / 0 和 / -1 负。 */
-    private void recordResult(int result) {
-        if (result > 0) {
-            wins++;
-            strength = Math.min(strength + 1, MAX_STRENGTH);
-        } else if (result < 0) {
-            losses++;
-            strength = Math.max(strength - 1, 0);
-        } else {
-            draws++;
+        Button btnAiFirst = findViewById(R.id.btn_menu_aifirst);
+        Button btnVoice = findViewById(R.id.btn_menu_voice);
+        if (btnAiFirst != null) {
+            btnAiFirst.setText(aiFirst ? AI_NAME + "执红先行：开" : AI_NAME + "执红先行：关");
         }
-        saveStats();
+        if (btnVoice != null) {
+            btnVoice.setText(voiceOn ? "语音：开" : "语音：关");
+        }
     }
 
-    /** 进入棋盘界面并开始新对局。 */
+    // ---------- 对局 ----------
+
     private void startGame() {
         setContentView(R.layout.activity_game);
 
@@ -143,21 +193,14 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
         statusView = findViewById(R.id.status);
         btnNew = findViewById(R.id.btn_new);
         btnUndo = findViewById(R.id.btn_undo);
-        btnAiFirst = findViewById(R.id.btn_aifirst);
 
         board = new Board();
         boardView.setOnMoveListener(this);
-        boardView.setFocusDownTarget(btnNew);
+        boardView.setFocusDownTarget(btnUndo);
 
         btnNew.setOnClickListener(v -> newGame());
         btnUndo.setOnClickListener(v -> undo());
-        btnAiFirst.setOnClickListener(v -> {
-            aiFirst = !aiFirst;
-            updateAiFirstButton();
-            newGame();
-        });
 
-        updateAiFirstButton();
         newGame();
     }
 
@@ -216,10 +259,33 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
         board.make(move);
         posHashes.add(board.hash());
         boardView.setLastMove(move);
-        if (captured != Board.EMPTY) playCaptureSound();
-        else beep(false);
+        if (captured != Board.EMPTY) {
+            playCaptureSound();
+            speak("吃" + pieceName(captured));
+        } else {
+            beep(false);
+        }
+        if (board.inCheck()) {
+            speakAdd("将军");
+        }
         updateStatus();
         checkRepetition();
+    }
+
+    /** 棋子中文名（用于吃子播报）。 */
+    private String pieceName(int p) {
+        int t = Board.type(p);
+        boolean red = Board.color(p) > 0;
+        switch (t) {
+            case Board.KING: return red ? "帅" : "将";
+            case Board.ADVISOR: return red ? "仕" : "士";
+            case Board.ELEPHANT: return red ? "相" : "象";
+            case Board.HORSE: return "马";
+            case Board.ROOK: return "车";
+            case Board.CANNON: return "炮";
+            case Board.PAWN: return red ? "兵" : "卒";
+            default: return "";
+        }
     }
 
     /** 同一局面（含走子方）出现三次判和。 */
@@ -251,27 +317,119 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
         return true;
     }
 
-    /** 终局统一处理：提示语、战绩、强度、禁输入。 */
+    /** 终局统一处理：战绩、强度、状态栏提示，稍后弹出结算界面。 */
     private void endGame(String message, int result) {
         if (gameOver) return;
         gameOver = true;
         gameStarted = false;
         recordResult(result);
         boardView.setInputEnabled(false);
-        String tail;
+        lastResult = result;
         if (result > 0) {
-            // 玩家获胜：刘洪江嘴硬一句
-            tail = AI_NAME + " 升至「" + STRENGTH_NAMES[strength] + "」嘴上不服："
-                    + GRUMBLES[random.nextInt(GRUMBLES.length)];
+            lastQuote = GRUMBLES[random.nextInt(GRUMBLES.length)];
+            statusView.setText(message + " " + AI_NAME + " 嘴上不服，正在结算…");
+            speak("你赢了！" + lastQuote);
         } else if (result < 0) {
-            // AI 获胜：报名号并随机嘲讽一句
-            tail = AI_NAME + "「" + STRENGTH_NAMES[strength] + "」："
-                    + TAUNTS[random.nextInt(TAUNTS.length)];
+            lastQuote = TAUNTS[random.nextInt(TAUNTS.length)];
+            statusView.setText(message + " " + AI_NAME + " 正在嘲讽，稍后结算…");
+            speak("你输了。" + lastQuote);
         } else {
-            tail = "强度不变";
+            lastQuote = "";
+            statusView.setText(message + " 正在结算…");
+            speak("和棋");
         }
-        statusView.setText(message + " " + tail + "，按「新对局」再来一局");
         beep(true);
+        // 稍等片刻再切结算界面，让玩家看清最后一手；
+        // 若玩家已开新局（gameOver 被复位）则不再弹出
+        new android.os.Handler(android.os.Looper.getMainLooper())
+                .postDelayed(() -> {
+                    if (gameOver && !isFinishing()) showResult();
+                }, 2000);
+    }
+
+    // ---------- 结算界面 ----------
+
+    private void showResult() {
+        if (isFinishing()) return;
+        setContentView(R.layout.activity_result);
+
+        TextView tvResult = findViewById(R.id.tv_result);
+        TextView tvQuote = findViewById(R.id.tv_quote);
+        TextView tvStats = findViewById(R.id.tv_result_stats);
+
+        String title;
+        int color;
+        if (lastResult > 0) {
+            title = "你赢了！";
+            color = Color.parseColor("#66BB6A");
+        } else if (lastResult < 0) {
+            title = "你输了…";
+            color = Color.parseColor("#EF5350");
+        } else {
+            title = "和棋";
+            color = Color.parseColor("#FFB300");
+        }
+        tvResult.setText(title);
+        tvResult.setTextColor(color);
+        if (lastQuote.isEmpty()) {
+            tvQuote.setText("双方势均力敌，不分胜负。");
+        } else {
+            tvQuote.setText(AI_NAME + "：" + lastQuote);
+        }
+        int games = wins + losses + draws;
+        String rate = games == 0 ? "—" : (wins * 100 / games) + "%";
+        String strengthLine;
+        if (lastResult > 0) {
+            strengthLine = AI_NAME + " 已升至「" + STRENGTH_NAMES[strength] + "」，下局更难";
+        } else if (lastResult < 0) {
+            strengthLine = AI_NAME + " 已降至「" + STRENGTH_NAMES[strength] + "」，下局稍易";
+        } else {
+            strengthLine = "当前强度「" + STRENGTH_NAMES[strength] + "」不变";
+        }
+        tvStats.setText("战绩 " + games + " 场：胜 " + wins + " / 负 " + losses
+                + " / 和 " + draws + " · 胜率 " + rate + "\n" + strengthLine);
+
+        Button btnAgain = findViewById(R.id.btn_again);
+        Button btnToMenu = findViewById(R.id.btn_tomenu);
+        btnAgain.setOnClickListener(v -> startGame());
+        btnToMenu.setOnClickListener(v -> showMenu());
+        btnAgain.requestFocus();
+    }
+
+    // ---------- 战绩 ----------
+
+    private void loadStats() {
+        wins = prefs.getInt("wins", 0);
+        losses = prefs.getInt("losses", 0);
+        draws = prefs.getInt("draws", 0);
+        strength = prefs.getInt("strength", DEFAULT_STRENGTH);
+        aiFirst = prefs.getBoolean("aifirst", false);
+        voiceOn = prefs.getBoolean("voice", true);
+    }
+
+    private void saveStats() {
+        prefs.edit()
+                .putInt("wins", wins)
+                .putInt("losses", losses)
+                .putInt("draws", draws)
+                .putInt("strength", strength)
+                .putBoolean("aifirst", aiFirst)
+                .putBoolean("voice", voiceOn)
+                .apply();
+    }
+
+    /** 记录一局结果并自动调整 AI 强度：1 胜 / 0 和 / -1 负。 */
+    private void recordResult(int result) {
+        if (result > 0) {
+            wins++;
+            strength = Math.min(strength + 1, MAX_STRENGTH);
+        } else if (result < 0) {
+            losses++;
+            strength = Math.max(strength - 1, 0);
+        } else {
+            draws++;
+        }
+        saveStats();
     }
 
     /** 对局中途退出（切后台/回桌面）自动判负。 */
@@ -330,10 +488,6 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
         }
     }
 
-    private void updateAiFirstButton() {
-        btnAiFirst.setText(aiFirst ? AI_NAME + "执红先行：开" : AI_NAME + "执红先行：关");
-    }
-
     private void beep(boolean strong) {
         try {
             tones.startTone(strong
@@ -366,6 +520,13 @@ public class GameActivity extends Activity implements BoardView.OnMoveListener {
     protected void onDestroy() {
         exec.shutdownNow();
         if (tones != null) tones.release();
+        if (tts != null) {
+            try {
+                tts.stop();
+                tts.shutdown();
+            } catch (Exception ignored) {
+            }
+        }
         super.onDestroy();
     }
 }
