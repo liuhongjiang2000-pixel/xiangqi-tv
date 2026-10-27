@@ -13,23 +13,34 @@
         android:textColor="#FFE0B2"
         android:textSize="48sp"
         android:textStyle="bold"
-        android:paddingBottom="48dp" />
+        android:paddingBottom="36dp" />
 
-    <Button
-        android:id="@+id/btn_menu_level"
-        android:layout_width="320dp"
-        android:layout_height="72dp"
-        android:layout_marginVertical="12dp"
-        android:nextFocusDown="@id/btn_menu_start"
-        android:text="难度：初级"
-        android:textSize="22sp" />
+    <TextView
+        android:id="@+id/tv_strength"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="当前强度：初级"
+        android:textColor="#FFB300"
+        android:textSize="26sp"
+        android:textStyle="bold"
+        android:paddingBottom="20dp" />
+
+    <TextView
+        android:id="@+id/tv_stats"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="战绩：0 场 · 胜 0 / 负 0 / 和 0 · 胜率 —"
+        android:textColor="#FFE0B2"
+        android:textSize="20sp"
+        android:gravity="center"
+        android:lineSpacingMultiplier="1.4"
+        android:paddingBottom="48dp" />
 
     <Button
         android:id="@+id/btn_menu_start"
         android:layout_width="320dp"
         android:layout_height="72dp"
         android:layout_marginVertical="12dp"
-        android:nextFocusUp="@id/btn_menu_level"
         android:text="开始游戏"
         android:textSize="22sp" />
 
