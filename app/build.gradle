@@ -14,12 +14,24 @@ android {
         versionName "1.0"
     }
 
+    signingConfigs {
+        ci {
+            storeFile file('xiangqi.keystore')
+            storePassword 'xiangqi2026'
+            keyAlias 'xiangqi'
+            keyPassword 'xiangqi2026'
+            storeType 'PKCS12'
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
+            signingConfig signingConfigs.ci
         }
         debug {
             minifyEnabled false
+            signingConfig signingConfigs.ci
         }
     }
 
